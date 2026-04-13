@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">nota-bengkel</string>
+    <string name="title_activity_main">nota-bengkel</string>
+    <string name="package_name">com.birru.motor</string>
+    <string name="custom_url_scheme">com.birru.motor</string>
+</resources>
