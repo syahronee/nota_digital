@@ -1,25 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Plus, Camera, Trash2, Package,
-    ChevronLeft, Loader2, Save, X, ChevronRight, Search // Tambahkan Search di sini
-} from 'lucide-react'; // Jika lucide-react tidak ketemu, pastikan nama library benar
+    Plus, Camera, Trash2, Package, Minus, ShoppingBag,
+    ChevronLeft, Loader2, Save, X, ChevronRight, Search
+} from 'lucide-react';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { supabase } from './supabase';
 
-const Inventory = ({ onBack, onAddToCart, cartCount, onCheckout }) => {
+const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckout, cart = [] }) => {
     const [products, setProducts] = useState([]);
-    const [filteredProducts, setFilteredProducts] = useState([]); // Pindahkan ke dalam
+    const [filteredProducts, setFilteredProducts] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false); // Modal Tambah Barang Baru
+    const [isCartOpen, setIsCartOpen] = useState(false);   // Modal Detail Keranjang
     const [isSaving, setIsSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const [formData, setFormData] = useState({
-        name: '',
-        price: '',
-        stock: '',
-        image_url: ''
-    });
+    const [formData, setFormData] = useState({ name: '', price: '', stock: '', image_url: '' });
     const [tempImage, setTempImage] = useState(null);
     const getSupabase = () => supabase;
 
@@ -96,47 +92,45 @@ const Inventory = ({ onBack, onAddToCart, cartCount, onCheckout }) => {
 
     const handleSaveProduct = async () => {
         if (!formData.name || !formData.price) return alert("Nama dan Harga wajib diisi!");
-
         setIsSaving(true);
-        const supabase = getSupabase();
-        let finalImageUrl = '';
-
         try {
+            let finalImageUrl = '';
             if (tempImage) {
-                finalImageUrl = await uploadImage(tempImage, formData.name);
+                const filePath = `products/${Date.now()}.png`;
+                const byteCharacters = atob(tempImage);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
+                const { error: upError } = await supabase.storage.from('product-image').upload(filePath, new Uint8Array(byteNumbers), { contentType: 'image/png' });
+                if (upError) throw upError;
+                const { data: { publicUrl } } = supabase.storage.from('product-image').getPublicUrl(filePath);
+                finalImageUrl = publicUrl;
             }
-
-            const payload = {
-                name: formData.name,
-                price: parseInt(formData.price),
-                stock: parseInt(formData.stock) || 0,
-                image_url: finalImageUrl
-            };
-
-            const { error } = await supabase.from('products').insert([payload]);
+            const { error } = await supabase.from('products').insert([{ ...formData, price: parseInt(formData.price), stock: parseInt(formData.stock) || 0, image_url: finalImageUrl }]);
             if (error) throw error;
-
             setIsModalOpen(false);
             setFormData({ name: '', price: '', stock: '', image_url: '' });
             setTempImage(null);
             fetchProducts();
-        } catch (err) {
-            alert("Gagal simpan: " + err.message);
-        } finally {
-            setIsSaving(false);
-        }
+        } catch (err) { alert("Gagal: " + err.message); }
+        finally { setIsSaving(false); }
     };
 
     return (
         <div className="min-h-screen bg-slate-50 pb-32">
             {/* Header */}
-            <div className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b p-4 flex items-center gap-4">
-                <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-all">
-                    <ChevronLeft />
+            <div className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b p-4 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-all"><ChevronLeft /></button>
+                    <h1 className="text-xl font-bold text-slate-800">Etalase</h1>
+                </div>
+                {/* Tombol Keranjang Kecil di Atas */}
+                <button onClick={() => setIsCartOpen(true)} className="relative p-2 bg-slate-100 rounded-xl">
+                    <ShoppingBag size={20} className="text-slate-600" />
+                    {cartCount > 0 && <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{cartCount}</span>}
                 </button>
-                <h1 className="text-xl font-bold text-slate-800">Etalase</h1>
             </div>
 
+            {/* SEARCH BAR */}
             <div className="p-4 bg-white border-b">
                 <div className="relative">
                     <Search className="absolute left-3 top-3 text-slate-400" size={18} />
@@ -149,12 +143,12 @@ const Inventory = ({ onBack, onAddToCart, cartCount, onCheckout }) => {
                 </div>
             </div>
 
-            {/* Gunakan filteredProducts di sini, bukan products */}
+            {/* PRODUCT GRID */}
             <div className="p-4 grid grid-cols-2 gap-4">
                 {loading ? (
                     <div className="col-span-2 flex flex-col items-center justify-center py-20">
                         <Loader2 className="animate-spin text-blue-500 mb-2" />
-                        <p className="text-xs text-slate-400">Memuat stok...</p>
+                        <p className="text-xs text-slate-400">Memuat barang...</p>
                     </div>
                 ) : filteredProducts.length === 0 ? (
                     <div className="col-span-2 text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100">
@@ -162,31 +156,95 @@ const Inventory = ({ onBack, onAddToCart, cartCount, onCheckout }) => {
                         <p className="text-slate-400 text-sm">Barang tidak ditemukan.</p>
                     </div>
                 ) : (
-                    filteredProducts.map(product => (
-                        <div
-                            key={product.id}
-                            onClick={() => onAddToCart(product)}
-                            className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 active:scale-95 transition-all relative overflow-hidden"
-                        >
-                            <div className="w-full h-32 bg-slate-100 rounded-xl mb-3 overflow-hidden flex items-center justify-center">
-                                {product.image_url ? (
-                                    <img src={product.image_url} className="w-full h-full object-cover" alt={product.name} />
-                                ) : (
-                                    <Package className="text-slate-300" size={30} />
+                    filteredProducts.map(product => {
+                        // HITUNG QUANTITY DI SINI
+                        const itemInCart = cart.find(i => i.id === product.id);
+                        const quantityInCart = itemInCart ? itemInCart.quantity : 0;
+
+                        return (
+                            <div
+                                key={product.id}
+                                onClick={() => onAddToCart(product)}
+                                className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 active:scale-95 transition-all relative overflow-hidden"
+                            >
+                                {/* Badge jumlah jika sudah ada di keranjang */}
+                                {quantityInCart > 0 && (
+                                    <div className="absolute top-2 right-2 bg-orange-500 text-white w-6 h-6 rounded-full text-[10px] flex items-center justify-center font-bold z-20 border-2 border-white">
+                                        {quantityInCart}
+                                    </div>
                                 )}
-                            </div>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{product.name}</h3>
-                            <p className="text-blue-600 font-bold text-sm">Rp {product.price?.toLocaleString('id-ID')}</p>
-                            <div className="mt-1 flex justify-between items-center">
-                                <span className="text-[9px] text-slate-400 font-bold uppercase">Stok: {product.stock}</span>
-                                <div className="bg-blue-50 text-blue-600 p-1 rounded-lg">
-                                    <Plus size={12} />
+
+                                {/* Indikator Stok Habis */}
+                                {product.stock <= 0 && (
+                                    <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center backdrop-blur-[1px]">
+                                        <span className="bg-red-500 text-white text-[10px] px-2 py-1 rounded-full font-bold">HABIS</span>
+                                    </div>
+                                )}
+
+                                <div className="w-full h-32 bg-slate-100 rounded-xl mb-3 overflow-hidden flex items-center justify-center">
+                                    {product.image_url ? (
+                                        <img src={product.image_url} className="w-full h-full object-cover" alt={product.name} />
+                                    ) : (
+                                        <Package className="text-slate-300" size={30} />
+                                    )}
+                                </div>
+                                <h3 className="font-bold text-slate-800 text-sm truncate">{product.name}</h3>
+                                <p className="text-blue-600 font-bold text-sm">Rp {product.price?.toLocaleString('id-ID')}</p>
+                                <div className="mt-1 flex justify-between items-center">
+                                    <span className="text-[9px] text-slate-400 font-bold uppercase">Stok: {product.stock}</span>
+                                    <div className={`p-1 rounded-lg ${quantityInCart > 0 ? 'bg-orange-100 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                                        <Plus size={12} />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
+
+            {/* Floating Action Button - TAMBAH BARANG BARU */}
+            <button onClick={() => setIsModalOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center active:scale-90 z-40">
+                <Plus size={28} />
+            </button>
+
+            {/* Modal Detail Keranjang (Tinjau Barang) */}
+            {isCartOpen && (
+                <div className="fixed inset-0 z-[100] flex items-end bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full rounded-t-[32px] p-6 max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between mb-4">
+                            <h2 className="font-bold text-lg text-slate-800">Keranjang Saya</h2>
+                            <button onClick={() => setIsCartOpen(false)}><X /></button>
+                        </div>
+                        <div className="space-y-4 mb-6">
+                            {cart.length === 0 ? <p className="text-center text-slate-400 py-10">Keranjang kosong</p> : cart.map(item => (
+                                <div key={item.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl">
+                                    <div>
+                                        <p className="font-bold text-sm">{item.name}</p>
+                                        <p className="text-xs text-blue-600">Rp {(item.price * item.quantity).toLocaleString()}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-white p-1 rounded-xl border">
+                                        <button onClick={() => onRemoveFromCart(item.id)} className="p-1 text-red-500"><Minus size={16} /></button>
+                                        <span className="font-bold text-sm">{item.quantity}</span>
+                                        <button onClick={() => onAddToCart(item)} className="p-1 text-blue-500"><Plus size={16} /></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <button
+                            onClick={() => {
+                                setIsCartOpen(false); // Tutup modal keranjang dulu
+                                onCheckout();        // Pindah ke view Nota
+                            }}
+                            disabled={cart.length === 0}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex justify-between px-6 items-center"
+                        >
+                            <span>Lanjut ke Nota</span>
+                            <ChevronRight />
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Floating Checkout Button */}
             {cartCount > 0 && (
@@ -214,61 +272,25 @@ const Inventory = ({ onBack, onAddToCart, cartCount, onCheckout }) => {
                 <Plus size={28} />
             </button>
 
-            {/* Modal Tambah Barang */}
+            {/* Modal Tambah Barang Baru Ke Database */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-sm p-0 transition-all">
-                    <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-lg font-bold">Tambah Barang</h2>
-                            <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
+                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
+                    <div className="bg-white w-full max-w-md rounded-[32px] p-6">
+                        <div className="flex justify-between mb-6">
+                            <h2 className="text-lg font-bold">Barang Baru</h2>
+                            <button onClick={() => setIsModalOpen(false)}><X /></button>
                         </div>
-
                         <div className="space-y-4">
-                            <div
-                                onClick={takePhoto}
-                                className="w-40 h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden transition-all active:bg-slate-100"
-                            >
-                                {tempImage ? (
-                                    <img src={`data:image/png;base64,${tempImage}`} className="w-full h-full object-cover" alt="Preview" />
-                                ) : (
-                                    <div className="text-center">
-                                        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-2 mx-auto">
-                                            <Camera size={24} />
-                                        </div>
-                                        <span className="text-xs text-slate-500 font-medium">Ambil Foto Barang</span>
-                                    </div>
-                                )}
+                            <div onClick={takePhoto} className="w-full h-40 bg-slate-50 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center overflow-hidden">
+                                {tempImage ? <img src={`data:image/png;base64,${tempImage}`} className="w-full h-full object-cover" /> : <Camera className="text-slate-300" />}
                             </div>
-
-                            <input
-                                placeholder="Nama Barang"
-                                className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                                value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                            />
-
+                            <input placeholder="Nama Barang" className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                             <div className="flex gap-4">
-                                <input
-                                    type="number" placeholder="Harga"
-                                    className="w-2/3 p-4 bg-slate-50 border-none rounded-2xl outline-none text-sm"
-                                    value={formData.price}
-                                    onChange={e => setFormData({ ...formData, price: e.target.value })}
-                                />
-                                <input
-                                    type="number" placeholder="Stok"
-                                    className="w-1/3 p-4 bg-slate-50 border-none rounded-2xl outline-none text-sm"
-                                    value={formData.stock}
-                                    onChange={e => setFormData({ ...formData, stock: e.target.value })}
-                                />
+                                <input type="number" placeholder="Harga" className="w-2/3 p-4 bg-slate-50 rounded-2xl outline-none" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} />
+                                <input type="number" placeholder="Stok" className="w-1/3 p-4 bg-slate-50 rounded-2xl outline-none" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
                             </div>
-
-                            <button
-                                disabled={isSaving}
-                                onClick={handleSaveProduct}
-                                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
-                            >
-                                {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-                                {isSaving ? 'Menyimpan...' : 'Simpan Barang'}
+                            <button disabled={isSaving} onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2">
+                                {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} />} Simpan ke Etalase
                             </button>
                         </div>
                     </div>

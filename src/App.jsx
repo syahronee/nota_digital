@@ -90,7 +90,12 @@ export default function App() {
   const [notas, setNotas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list'); // 'list' | 'edit'
-  const [currentNota, setCurrentNota] = useState(null);
+  const [currentNota, setCurrentNota] = useState({
+    customer_name: '',
+    phone: '',
+    items: [], // WAJIB ADA agar .map() tidak error
+    total: 0
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [downloadingType, setDownloadingType] = useState(null);
@@ -466,6 +471,39 @@ export default function App() {
     setCurrentNota(newNota);
     setView('edit');
   };
+
+  // HANDLER TAMBAH KE KERANJANG
+  const handleAddToCart = (product) => {
+    setCart(currentCart => {
+      const isExist = currentCart.find(item => item.id === product.id);
+      const currentQty = isExist ? (isExist.quantity || 0) : 0;
+
+      // VALIDASI STOK: Jika qty di keranjang sudah sama dengan stok, jangan tambah lagi
+      if (currentQty >= product.stock) {
+        alert(`Stok tidak mencukupi! Maksimal: ${product.stock}`);
+        return currentCart;
+      }
+
+      if (isExist) {
+        return currentCart.map(item =>
+          item.id === product.id ? { ...item, quantity: currentQty + 1 } : item
+        );
+      }
+      return [...currentCart, { ...product, quantity: 1 }];
+    });
+  };
+
+  // HANDLER HAPUS DARI KERANJANG
+  const handleRemoveFromCart = (productId) => {
+    setCart(currentCart => {
+      const item = currentCart.find(i => i.id === productId);
+      if (item.quantity > 1) {
+        return currentCart.map(i => i.id === productId ? { ...i, quantity: i.quantity - 1 } : i);
+      }
+      return currentCart.filter(i => i.id !== productId);
+    });
+  };
+
   // ==========================================
   // 1. CALCULATIONS & FORMATTERS (Bantuan)
   // ==========================================
@@ -852,11 +890,15 @@ export default function App() {
   const handleCheckout = () => {
     if (cart.length === 0) return alert("Keranjang masih kosong!");
 
-    // Siapkan data nota baru dengan isi dari keranjang
+    // 1. Hitung total belanja dari keranjang sebelum dikosongkan
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    // 2. Siapkan data nota (Pastikan mapping key-nya benar)
     const newItems = cart.map(item => ({
       name: item.name,
-      qty: item.qty,
-      price: item.price
+      qty: item.quantity, // Pakai 'quantity' sesuai data dari keranjang
+      price: item.price,
+      total: item.price * item.quantity // Tambahkan subtotal per item jika perlu
     }));
 
     setCurrentNota({
@@ -865,13 +907,15 @@ export default function App() {
       customer_name: '',
       customer_phone: '',
       items: newItems,
+      subtotal: subtotal, // Simpan total kotor
       serviceFee: 0,
       amountPaid: 0,
       isLocal: true
     });
 
-    setCart([]); // Kosongkan keranjang setelah checkout
-    setView('edit'); // Langsung ke halaman edit nota untuk finishing
+    // 3. Reset dan Pindah Halaman
+    setCart([]);
+    setView('edit');
   };
 
   // --- RENDER LOGIC ---
@@ -979,18 +1023,21 @@ export default function App() {
     );
   }
 
-  // 2. VIEW INVENTORY
+  // ==========================================
+  // 2. VIEW INVENTORY (Etalase Produk)
+  // ========================================== 
   if (view === 'inventory') {
     return (
-        <div className="text-center text-slate-400">
-          <Inventory
-            onBack={() => setView('list')}
-            onSelectProduct={(product) => {
-              // Logika jika ingin memasukkan produk dari inventori ke keranjang/nota
-              console.log("Product selected:", product);
-            }}
-          />
-        </div>
+      <div className="text-center text-slate-400">
+        <Inventory
+          onAddToCart={handleAddToCart}
+          onRemoveFromCart={handleRemoveFromCart}
+          cart={cart}
+          cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
+          onBack={() => setView('list')}
+          onCheckout={handleCheckout} // Tambahkan handle checkout
+        />
+      </div>
     );
   }
 
@@ -1025,8 +1072,8 @@ export default function App() {
 
             {/* STEMPEL LUNAS/Hutang (Point 3) */}
             <div className="absolute top-80 left-1/2 -translate-x-1/2 -rotate-12 pointer-events-none opacity-20 z-10">
-              <div className={`border-8 px-8 py-2 rounded-xl text-5xl font-black uppercase ${isLunas ? 'border-green-600 text-green-600' : 'border-red-600 text-red-600'}`}>
-                {isLunas ? 'LUNAS' : 'Hutang'}
+              <div className={`border-8 px-8 py-2 rounded-xl text-5xl font-black uppercase ${isLunas ? 'border-green-600 text-green-600' : ''}`}>
+                {isLunas ? 'LUNAS' : ''}
               </div>
             </div>
 
@@ -1077,7 +1124,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentNota.items.map((item, idx) => (
+                  {currentNota.items?.map((item, idx) => (
                     <tr key={idx} className="border-b border-slate-50">
                       <td className="py-4">
                         <input
@@ -1114,7 +1161,7 @@ export default function App() {
                         />
                       </td>
                       <td className="text-right font-bold text-slate-900">{formatRupiah(item.qty * item.price)}</td>
-                      <button 
+                      <button
                         onClick={() => removeItem(idx)}
                         className="text-slate-300 hover:text-red-500 hover:bg-red-100 rounded-md transition-all mt-5 ms-3 p-2"
                       >
