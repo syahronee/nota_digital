@@ -1,12 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import {
     Plus, Camera, Trash2, Package, Minus, ShoppingBag, MoreVertical,
-    ChevronLeft, Loader2, Save, X, ChevronRight, Search, Edit3
+    ChevronLeft, Loader2, Save, X, ChevronRight, Search, Edit3, PackageOpen
 } from 'lucide-react';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { supabase } from './supabase';
+import { showToast, showAlert, showConfirm } from './utils/alert';
 
-const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckout, cart = [] }) => {
+// Fungsi untuk mengubah angka jadi format 1.000.000
+const formatRupiah = (value) => {
+    if (!value) return '';
+    const numberString = value.toString().replace(/[^,\d]/g, '');
+    const split = numberString.split(',');
+    const sisa = split[0].length % 3;
+    let rupiah = split[0].substr(0, sisa);
+    const ribuan = split[0].substr(sisa).match(/\d{3}/gi);
+
+    if (ribuan) {
+        const separator = sisa ? '.' : '';
+        rupiah += separator + ribuan.join('.');
+    }
+
+    return split[1] !== undefined ? rupiah + ',' + split[1] : rupiah;
+};
+
+// Fungsi untuk membersihkan titik agar bisa disimpan ke database (integer)
+const cleanThousandSeparator = (value) => {
+    return value.replace(/\./g, '');
+};
+
+const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckout, cart = [], session, ...props }) => {
     const [products, setProducts] = useState([]);
     const [filteredProducts, setFilteredProducts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -69,7 +92,11 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
 
     // FUNGSI SIMPAN BARANG BARU
     const handleSaveProduct = async () => {
-        if (!formData.name || !formData.price) return alert("Nama dan Harga wajib diisi!");
+        if (!session?.user?.id) {
+            showAlert("Gagal: Sesi tidak ditemukan. Silakan login ulang.");
+            return;
+        }
+        if (!formData.name || !formData.price) return showAlert("Nama dan Harga wajib diisi!");
         setIsSaving(true);
         try {
             let finalImageUrl = '';
@@ -83,13 +110,16 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                 const { data: { publicUrl } } = supabase.storage.from('product-image').getPublicUrl(filePath);
                 finalImageUrl = publicUrl;
             }
-            const { error } = await supabase.from('products').insert([{ ...formData, price: parseInt(formData.price), stock: parseInt(formData.stock) || 0, image_url: finalImageUrl }]);
+            const { error } = await supabase.from('products').insert([{ ...formData, price: parseInt(formData.price), stock: parseInt(formData.stock) || 0, image_url: finalImageUrl, user_id: session.user.id }]);
             if (error) throw error;
 
             setIsModalOpen(false);
             resetForm();
             fetchProducts();
-        } catch (err) { alert("Gagal: " + err.message); }
+
+            showToast("Barang berhasil ditambahkan!");
+
+        } catch (err) { showAlert('Gagal!', 'Anda sedang offline', 'info'); }
         finally { setIsSaving(false); }
     };
 
@@ -117,17 +147,20 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                 image_url: finalImageUrl
             }).eq('id', editingProduct.id);
 
+            showToast("Update Berhasil Disimpan!");
+
             if (error) throw error;
             setEditingProduct(null);
             resetForm();
             fetchProducts();
-        } catch (err) { alert("Update Gagal: " + err.message); }
+
+        } catch (err) { showAlert("Update Gagal: " + err.message); }
         finally { setIsSaving(false); }
     };
 
     // FUNGSI HAPUS BARANG
     const handleDeleteProduct = async (id) => {
-        if (!confirm("Hapus barang ini?")) return;
+        if (!showConfirm("Yakin hapus barang ini?")) return;
         const { error } = await supabase.from('products').delete().eq('id', id);
         if (!error) {
             setEditingProduct(null);
@@ -177,8 +210,8 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                     </div>
                 ) : filteredProducts.length === 0 ? (
                     <div className="col-span-2 text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100">
-                        <Package className="mx-auto text-slate-200 mb-2" size={40} />
-                        <p className="text-slate-400 text-sm">Barang tidak ditemukan.</p>
+                        <PackageOpen className="mx-auto text-slate-200 mb-2" size={40} />
+                        <p className="text-slate-400 text-sm">Barang tidak ditemukan, atau anda sedang offline.</p>
                     </div>
                 ) : (
                     filteredProducts.map(product => {
@@ -190,7 +223,7 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                                     e.stopPropagation();
                                     setEditingProduct(product);
                                     setFormData({ name: product.name, price: product.price, stock: product.stock, image_url: product.image_url });
-                                }} className="absolute top-2 left-2 z-20 p-1.5 bg-white/90 shadow-sm rounded-full text-slate-400">
+                                }} className="absolute top-2 left-2 z-20 p-1.5 bg-slate-100 shadow-sm rounded-full text-slate-400">
                                     <MoreVertical size={16} />
                                 </button>
 
@@ -232,12 +265,25 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                                 ) : (
                                     <Camera className="text-slate-300" />
                                 )}
-                                <div className="absolute bottom-2 right-2 bg-blue-600 p-2 rounded-full text-white shadow-lg"><Edit3 size={16} /></div>
+                                <div className="absolute bottom-2 right-2 bg-blue-500 p-2 rounded-full text-white shadow-lg"><Edit3 size={16} /></div>
                             </div>
 
                             <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
-                            <input type="number" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-blue-600" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} />
-
+                            <input
+                                type="text" // Ubah ke text agar bisa menampilkan titik
+                                placeholder="Harga"
+                                className="w-2/3 p-4 bg-slate-50 font-bold text-green-900 rounded-2xl outline-none"
+                                // Tampilkan data yang sudah diformat titik
+                                value={formatRupiah(formData.price)}
+                                onChange={e => {
+                                    // Bersihkan titik sebelum disimpan ke state agar tetap angka murni
+                                    const cleanedValue = cleanThousandSeparator(e.target.value);
+                                    // Pastikan hanya angka yang masuk
+                                    if (!isNaN(cleanedValue)) {
+                                        setFormData({ ...formData, price: cleanedValue });
+                                    }
+                                }}
+                            />
                             <div className="flex items-center gap-4 bg-slate-100 p-2 rounded-2xl">
                                 <button onClick={() => setFormData({ ...formData, stock: Math.max(0, parseInt(formData.stock) - 1) })} className="p-3 bg-white rounded-xl text-red-500"><Minus /></button>
                                 <input type="number" className="flex-1 text-center bg-transparent font-bold text-lg" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
@@ -265,12 +311,25 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                         </div>
                         <div className="space-y-4">
                             <div onClick={takePhoto} className="w-full h-40 bg-slate-50 border-2 border-dashed rounded-2xl flex items-center justify-center overflow-hidden">
-                                {tempImage ? <img src={`data:image/png;base64,${tempImage}`} className="w-full h-full object-cover" /> : <Camera className="text-slate-300" />}
+                                {tempImage ? <img src={`data:image/png;base64,${tempImage}`} className="w-full h-full object-cover" /> : <Camera className="text-slate-300" size={35} />}
                             </div>
-                            <input placeholder="Nama Barang" className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                            <input placeholder="Nama Barang" className="w-full p-4 bg-slate-50 text-slate-800 font-bold rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                             <div className="flex gap-4">
-                                <input type="number" placeholder="Harga" className="w-2/3 p-4 bg-slate-50 rounded-2xl outline-none" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} />
-                                <input type="number" placeholder="Stok" className="w-1/3 p-4 bg-slate-50 rounded-2xl outline-none" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
+                                <input
+                                    type="text" // Ubah ke text agar bisa menampilkan titik
+                                    placeholder="Harga"
+                                    className="w-2/3 p-4 bg-slate-50 font-bold text-green-900 rounded-2xl outline-none"
+                                    // Tampilkan data yang sudah diformat titik
+                                    value={formatRupiah(formData.price)}
+                                    onChange={e => {
+                                        // Bersihkan titik sebelum disimpan ke state agar tetap angka murni
+                                        const cleanedValue = cleanThousandSeparator(e.target.value);
+                                        // Pastikan hanya angka yang masuk
+                                        if (!isNaN(cleanedValue)) {
+                                            setFormData({ ...formData, price: cleanedValue });
+                                        }
+                                    }}
+                                />                                <input type="number" placeholder="Stok" className="w-1/3 p-4 bg-slate-50 text-slate-800 rounded-2xl outline-none" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
                             </div>
                             <button disabled={isSaving} onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2">
                                 {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} />} Simpan ke Etalase

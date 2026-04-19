@@ -1,5 +1,17 @@
 {
-  "appId": "com.birru.motor",
-  "appName": "nota-bengkel",
-  "webDir": "dist"
+  "appId": "com.vona.pos",
+  "appName": "VONA",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 3000,
+      "launchAutoHide": true,
+      "backgroundColor": "#2563eb",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  }
 }

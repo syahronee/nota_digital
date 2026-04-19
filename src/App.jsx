@@ -10,12 +10,16 @@ import { Network } from '@capacitor/network';
 import { Preferences } from '@capacitor/preferences';
 import { createClient } from '@supabase/supabase-js';
 import {
-  Plus, Trash2, Printer, Share2, Download, ChevronLeft,
+  Trash2, Printer, Share2, Download, ChevronLeft,
   FileText, Search, PlusCircle, Loader2, Save, Wrench,
-  FileDown, Phone, AlertTriangle, Package
+  FileDown, AlertTriangle, Package, Settings as SettingsIcon
 } from 'lucide-react';
 import ThermalPrint from "./ThermalPrint";
 import Inventory from './Inventory';
+import Settings from './Settings';
+import LoginView from './LoginView';
+import UpdatePasswordForm from './UpdatePasswordForm';
+import { showToast, showAlert } from './utils/alert';
 
 // ==========================================
 // 2. CONFIGURATION & INSTANCE CLIENT
@@ -36,7 +40,6 @@ const checkConnection = async () => {
 };
 
 // --- Helper Pending Data ---
-// getPending dipindah ke atas agar savePending bisa memanggilnya
 const getPending = async () => {
   const { value } = await Preferences.get({ key: 'pending_notas' });
   return value ? JSON.parse(value) : [];
@@ -86,10 +89,11 @@ export default function App() {
   const notaRef = useRef(null);
 
   // --- STATE ---
+  const [session, setSession] = useState(null);
   const [isOnlineState, setIsOnlineState] = useState(true);
   const [notas, setNotas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('list'); // 'list' | 'edit'
+  const [view, setView] = useState('list');
   const [currentNota, setCurrentNota] = useState({
     customer_name: '',
     phone: '',
@@ -102,8 +106,39 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState({ show: false, id: null, name: '' });
   const [currentQris, setCurrentQris] = useState(null);
   const [cart, setCart] = useState([]);
+  const [shopSettings, setShopSettings] = useState({
+    shop_name: 'Loading...',
+    shop_address: '',
+    shop_info: '',
+    shop_bio: ''
+  });
+  const [currentPage, setCurrentPage] = useState('login'); // Default ke login
+
 
   // --- LIFECYCLE (USE EFFECT) ---
+  useEffect(() => {
+    // 1. Ambil sesi saat ini saat aplikasi pertama kali dibuka
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    // 2. Gabungkan listener Auth menjadi satu pintu
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("🔥 Supabase Auth Event:", event); // Biar gampang debbuging
+      setSession(session);
+
+      if (event === "PASSWORD_RECOVERY") {
+        // Jika dari link email, paksa masuk ke halaman ganti password
+        setCurrentPage('update-password');
+      } else if (event === "SIGNED_OUT") {
+        setCurrentPage('login');
+      }
+    });
+
+    // 3. Pastikan listener dibersihkan saat komponen unmount
+    return () => subscription.unsubscribe();
+  }, []);
+
   useEffect(() => {
     let backHandler; // Buat variabel penampung
 
@@ -123,6 +158,15 @@ export default function App() {
     };
   }, [view]);
 
+  // Ambil data saat aplikasi dibuka
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const { data, error } = await supabase.from('settings').select('*').single();
+      if (!error && data) setShopSettings(data);
+    };
+    fetchSettings();
+  }, []);
+
   useEffect(() => {
     // Load html2canvas
     const s1 = document.createElement('script');
@@ -139,7 +183,53 @@ export default function App() {
     const interval = setInterval(() => {
       // Pastikan fungsi syncPendingData ada di bawah kode ini nantinya
       if (typeof syncPendingData === 'function') syncPendingData();
-    }, 360000);
+    }, 60000);
+
+    const syncPendingData = async () => {
+      const isOnline = isOnlineState;
+      const client = getSupabase();
+
+      if (!isOnline || !client) return;
+
+      const pending = await getPending();
+      if (pending.length === 0) return;
+
+      console.log("🔥 Syncing data...");
+
+      try {
+        for (const item of pending) {
+          if (item.type === 'insert') {
+            await client.from('notas').insert([item.data]).select().single();
+          }
+
+          if (item.type === 'update') {
+            const { data, error } = await client
+              .from('notas')
+              .update(item.data)
+              .eq('id', item.data.id)
+              .select().single();
+
+            if (!error && data) {
+              setNotas(prev => {
+                const updated = prev.map(n => n.id === data.id ? { ...data, isLocal: false } : n);
+                saveToLocal(updated);
+                return updated;
+              });
+            }
+          }
+
+          if (item.type === 'delete') {
+            await client.from('notas').delete().eq('id', item.id);
+          }
+        }
+
+        await clearPending();
+        await fetchNotas(); // Refresh total dari server
+        console.log("✅ Sync Berhasil");
+      } catch (err) {
+        console.error("❌ Sync Gagal:", err.message);
+      }
+    };
 
     document.addEventListener('deviceready', async () => {
       console.log("🔥 Device ready");
@@ -163,7 +253,6 @@ export default function App() {
 
     initNetwork();
 
-    // Listener perubahan koneksi 🔥
     // Listener perubahan koneksi 🔥
     let networkHandler;
 
@@ -190,10 +279,31 @@ export default function App() {
     };
   }, []);
 
+  const handleUpdatePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      showAlert("Gagal update!", error.message, "error");
+    } else {
+      showAlert("Mantap!", "Password baru berhasil disimpan.", "success");
+      // JANGAN arahkan ke login. Arahkan ke aplikasi utama
+      setCurrentPage('app'); // Kembalikan state page ke default aplikasi
+      setView('list');       // Tampilkan daftar nota
+    }
+  };
+
   // --- HELPER DI DALAM KOMPONEN ---
+  const currentUserId = session ? session.user.id : null;
   const generateId = () => {
     return crypto?.randomUUID?.() || Date.now() + '-' + Math.random();
   };
+
+  const goToSettings = () => {
+    console.log("Tombol setting diklik, merubah view ke: settings");
+    setView('settings');
+  }
 
   const getSupabase = () => supabase;
 
@@ -264,7 +374,7 @@ export default function App() {
   const scanPrinter = async () => {
     const bt = getBluetooth();
     if (!bt) {
-      alert("Bluetooth belum ready atau plugin tidak terinstal");
+      showAlert("Bluetooth belum ready atau plugin tidak terinstal");
       return;
     }
 
@@ -278,9 +388,9 @@ export default function App() {
 
       if (printer) {
         await savePrinter(printer.id);
-        alert("Printer tersimpan: " + printer.name);
+        showToast("Printer tersimpan: " + printer.name);
       } else {
-        alert("Printer tidak ditemukan");
+        showAlert("Printer tidak ditemukan");
       }
     } catch (err) {
       console.error("Gagal scan printer:", err);
@@ -419,7 +529,7 @@ export default function App() {
   const printThermalBluetooth = async () => {
     const bt = getBluetooth();
     if (!bt) {
-      alert("Bluetooth belum ready");
+      showAlert("Bluetooth belum ready");
       return;
     }
 
@@ -427,7 +537,7 @@ export default function App() {
 
     const connected = await autoConnectPrinter();
     if (!connected) {
-      alert("Printer belum connect");
+      showAlert("Printer belum connect");
       return;
     }
 
@@ -480,7 +590,7 @@ export default function App() {
 
       // VALIDASI STOK: Jika qty di keranjang sudah sama dengan stok, jangan tambah lagi
       if (currentQty >= product.stock) {
-        alert(`Stok tidak mencukupi! Maksimal: ${product.stock}`);
+        showAlert(`Stok tidak mencukupi! Maksimal: ${product.stock}`);
         return currentCart;
       }
 
@@ -606,6 +716,9 @@ export default function App() {
           data: payload
         });
       }
+
+      showToast("Nota berhasil disimpan!");
+
     } catch (err) {
       console.error("Gagal simpan:", err.message);
     }
@@ -625,52 +738,6 @@ export default function App() {
     });
 
     setView('list');
-  };
-
-  const syncPendingData = async () => {
-    const isOnline = isOnlineState;
-    const client = getSupabase();
-
-    if (!isOnline || !client) return;
-
-    const pending = await getPending();
-    if (pending.length === 0) return;
-
-    console.log("🔥 Syncing data...");
-
-    try {
-      for (const item of pending) {
-        if (item.type === 'insert') {
-          await client.from('notas').insert([item.data]).select().single();
-        }
-
-        if (item.type === 'update') {
-          const { data, error } = await client
-            .from('notas')
-            .update(item.data)
-            .eq('id', item.data.id)
-            .select().single();
-
-          if (!error && data) {
-            setNotas(prev => {
-              const updated = prev.map(n => n.id === data.id ? { ...data, isLocal: false } : n);
-              saveToLocal(updated);
-              return updated;
-            });
-          }
-        }
-
-        if (item.type === 'delete') {
-          await client.from('notas').delete().eq('id', item.id);
-        }
-      }
-
-      await clearPending();
-      await fetchNotas(); // Refresh total dari server
-      console.log("✅ Sync Berhasil");
-    } catch (err) {
-      console.error("❌ Sync Gagal:", err.message);
-    }
   };
 
   const confirmDelete = (id, name, e) => {
@@ -802,6 +869,7 @@ export default function App() {
         link.click();
       }
     } catch (err) {
+      showAlert("Gagal mengunduh gambar: " + err.message);
       console.error("Gagal PNG:", err.message);
     } finally {
       setDownloadingType(null);
@@ -854,6 +922,7 @@ export default function App() {
         pdf.save(fileName);
       }
     } catch (err) {
+      showAlert("Gagal mengunduh PDF: " + err.message);
       console.error("Gagal PDF:", err.message);
     } finally {
       setDownloadingType(null);
@@ -920,7 +989,38 @@ export default function App() {
 
   // --- RENDER LOGIC ---
 
-  // 1. VIEW LIST (Riwayat)
+  // 1. PRIORITAS TERTINGGI: Cek apakah sedang proses reset password
+  if (currentPage === 'update-password') {
+    return (
+      <UpdatePasswordForm
+        onUpdate={handleUpdatePassword}
+        onBack={async () => {
+          // Jika user batal ganti password dan klik "Back"
+          setCurrentPage('login');
+          await supabase.auth.signOut(); // Wajib sign out karena link reset = auto login
+        }}
+      />
+    );
+  }
+
+  // 2. Jika tidak ada sesi aktif, paksa ke LoginView
+  if (!session) {
+    return <LoginView />;
+  }
+
+  // 3. Jika sesi aktif dan minta ke Settings
+  if (view === 'settings') {
+    return (
+      <Settings
+        session={session}
+        settings={shopSettings}
+        onSave={(newVal) => setShopSettings(newVal)}
+        onBack={() => setView('list')}
+      />
+    );
+  }
+
+  // VIEW LIST (Riwayat)
   if (view === 'list') {
     const validNotas = (notas || []).filter(n => n !== null);
     const filtered = validNotas.filter(n =>
@@ -949,25 +1049,35 @@ export default function App() {
         )}
 
         {/* HEADER LIST */}
-        <div className="bg-slate-800 text-white p-6 relative overflow-hidden">
+        <div className="bg-slate-800 text-white p-4 relative overflow-hidden">
           {/* Variasi hiasan background */}
-          <div className="absolute -right-10 -top-10 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute -right-10 -top-10 w-32 h-32 bg-sky-700/10 rounded-full blur-3xl"></div>
 
           <div className="max-w-md mx-auto flex justify-between items-end relative z-10">
             <div>
-              <h1 className="text-2xl font-black italic uppercase tracking-tighter leading-none">Birru Motor</h1>
-              <p className="text-[9px] font-bold text-slate-400 mt-1 tracking-[0.2em]">VERSION 2.4.0</p>
+              <img src="logo1.png" alt="logo_vona" className='h-10 mb-0' />
+              <p className="text-[9px] font-bold text-slate-400 ms-3 mt-1 tracking-[0.2em]">V-2.4.0</p>
             </div>
 
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3 mb-3 align-middle">
+
+              {/* TOMBOL SETTINGS BARU */}
+              <button
+                onClick={goToSettings} // Pastikan fungsi ini dikirim lewat props dari App.jsx
+                className="p-1 text-slate-50 bg-slate-700 rounded-md active:scale-90 transition-all"
+              >
+                <SettingsIcon size={20} />
+              </button>
+
               {/* Point 7: Perbaikan Logic Warna Badge */}
-              <div className={`flex items-center gap-1.5 text-[10px] px-3 py-1 rounded-full border shadow-sm ${isOnlineState
-                ? 'bg-green-500/10 border-green-500/50 text-green-400'
-                : 'bg-red-500/10 border-red-500/50 text-red-400'
+              <div className={`flex items-center gap-1 text-[8px] font-bold px-1 py-0.5 rounded-full border shadow-sm ${isOnlineState
+                ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
+                : 'bg-orange-500/10 border-orange-500/50 text-orange-400'
                 }`}>
-                <span className={`w-2 h-2 rounded-full animate-pulse ${isOnlineState ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                <span className={`w-2 h-2 rounded-full animate-pulse ${isOnlineState ? 'bg-emerald-400' : 'bg-orange-400'}`}></span>
                 {isOnlineState ? 'Online' : 'Offline'}
               </div>
+
             </div>
           </div>
         </div>
@@ -1024,18 +1134,19 @@ export default function App() {
   }
 
   // ==========================================
-  // 2. VIEW INVENTORY (Etalase Produk)
+  // VIEW INVENTORY (Etalase Produk)
   // ========================================== 
   if (view === 'inventory') {
     return (
       <div className="text-center text-slate-400">
         <Inventory
+          session={session}
           onAddToCart={handleAddToCart}
           onRemoveFromCart={handleRemoveFromCart}
           cart={cart}
           cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
           onBack={() => setView('list')}
-          onCheckout={handleCheckout} // Tambahkan handle checkout
+          onCheckout={handleCheckout}
         />
       </div>
     );
@@ -1052,7 +1163,7 @@ export default function App() {
         <div className="max-w-md mx-auto bg-white min-h-screen relative pb-40 shadow-2xl sm:rounded-3xl overflow-hidden">
 
           {/* NAVBAR */}
-          <div className="flex items-center justify-between px-4 py-3 bg-white border-b sticky top-0 z-40">
+          <div className="flex items-center justify-between px-3 py-1 bg-white border-b sticky top-0 z-40">
             <button onClick={() => setView('list')} className="w-10 h-10 flex items-center justify-center bg-slate-50 rounded-xl">
               <ChevronLeft size={20} />
             </button>
@@ -1079,10 +1190,9 @@ export default function App() {
 
             {/* Header Toko (Point 5: Full kesamping) */}
             <div className="bg-slate-900 text-white p-4 border-b-[6px] border-orange-500 mb-6">
-              <h1 className="text-3xl font-bold italic uppercase tracking-tighter">Birru Motor</h1>
-              <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Sumberjati Wetan - Wedoro - Pandaan</p>
-              <p className="text-[10px] text-orange-500">WA: 0831-1758-3901</p>
-              <p className="text-[10px] text-orange-500">Rek. 648801040883537 A/N. NURUL</p>
+              <h1 className="text-3xl font-bold italic uppercase tracking-tighter">{shopSettings.shop_name}</h1>
+              <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">{shopSettings.shop_address}</p>
+              <p className="text-[10px] text-orange-500">{shopSettings.shop_bio}</p>
             </div>
 
             <div className="px-5">
@@ -1137,7 +1247,7 @@ export default function App() {
                           className="w-full font-bold outline-none text-slate-800" placeholder="Item/Jasa..."
                         />
                         <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
-                          <span>Harga Satuan:</span>
+                          <span>Harga:</span>
                           <input
                             value={formatInput(item.price)}
                             onChange={(e) => {
@@ -1213,7 +1323,19 @@ export default function App() {
                     {formatRupiah(Math.abs(diff))}
                   </span>
                 </div>
+
               </div>
+            </div>
+          </div>
+
+          {/* INFO NOTA */}
+          <div className="px-5 mt-8 mb-20 text-center">
+            <p className="text-[12px] text-slate-500 font-bold">{shopSettings.shop_info}</p>
+            <div className="flex flex-col items-center justify-center gap-2 mt-4">
+              <span className="text-[12px] text-slate-400">
+                Powered by
+              </span>
+              <img src="logo2.png" alt="logo_vona" className="h-4 w-auto object-contain" />
             </div>
           </div>
 
@@ -1222,7 +1344,7 @@ export default function App() {
             <button onClick={downloadImage} className="flex-1 flex flex-col items-center py-3 bg-slate-800 text-white rounded-2xl font-bold text-[9px] active:scale-95 transition-all">
               <Download size={20} className="mb-1 text-orange-400" />PNG
             </button>
-            <button onClick={downloadPDF} className="flex-1 flex flex-col items-center py-3 bg-rose-600 text-white rounded-2xl font-bold text-[9px] active:scale-95 transition-all">
+            <button onClick={downloadPDF} className="flex-1 flex flex-col items-center py-3 bg-orange-600 text-white rounded-2xl font-bold text-[9px] active:scale-95 transition-all">
               <FileDown size={20} className="mb-1" />PDF
             </button>
             <button onClick={handleAutoPrint} className="flex-1 flex flex-col items-center py-3 bg-blue-600 text-white rounded-2xl font-bold text-[9px] active:scale-95 transition-all">
@@ -1261,4 +1383,6 @@ export default function App() {
       </div>
     </>
   );
+
+  return null; // Fallback jika view tidak dikenali
 }

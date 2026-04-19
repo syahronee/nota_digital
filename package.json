@@ -24,7 +24,9 @@
     "cordova-plugin-bluetooth-serial": "^0.4.7",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "sweetalert2": "^11.26.24",
+    "sweetalert2-react-content": "^5.1.2"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
