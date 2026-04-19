@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.birru.motor"
+    namespace = "com.vona.pos"
     compileSdk = rootProject.ext.compileSdkVersion
 
     compileOptions {
@@ -9,7 +9,7 @@ android {
     targetCompatibility JavaVersion.VERSION_17
     }
     defaultConfig {
-        applicationId "com.birru.motor"
+        applicationId "com.vona.pos"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

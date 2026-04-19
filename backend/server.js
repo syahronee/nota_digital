@@ -4,38 +4,47 @@ const cors = require("cors");
 
 const app = express();
 
-app.use(cors()); // 🔥 WAJIB INI
+// Middleware
+app.use(cors()); 
 app.use(express.json());
 
 app.post("/create-qris", async (req, res) => {
-  const { amount } = req.body;
+  const { amount, customerName } = req.body;
 
   try {
     const response = await axios.post(
       "https://api.xendit.co/qr_codes",
       {
-        external_id: "nota-" + Date.now(),
+        // External ID unik agar tidak bentrok di dashboard Xendit
+        external_id: `vona-${Date.now()}`, 
         type: "DYNAMIC",
+        callback_url: "https://vona-digital.vercel.app/callback", // Opsional
         amount: amount,
       },
       {
         auth: {
-          username: "YOUR_API_KEY",
+          // Mengambil Key dari Environment Variable di Vercel
+          username: process.env.XENDIT_API_KEY || "YOUR_TEST_KEY_FOR_LOCAL",
           password: ""
         }
       }
     );
 
+    // Kirim data lengkap ke frontend
+    // Di frontend nanti, ambil: response.data.qr_string
     res.json(response.data);
 
   } catch (err) {
-    console.error(err.response?.data || err.message);
+    console.error("Xendit Error:", err.response?.data || err.message);
     res.status(500).json(err.response?.data || { error: "Gagal buat QRIS" });
   }
 });
 
-app.listen(3000, () => {
-  console.log("Server jalan di http://localhost:3000");
+// Port untuk jalan di lokal
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server VONA jalan di port ${PORT}`);
 });
 
+// WAJIB UNTUK VERCEL
 module.exports = app;

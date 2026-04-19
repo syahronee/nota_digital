@@ -1,4 +1,4 @@
-package com.birru.motor;
+package com.vona.pos;
 
 import com.getcapacitor.BridgeActivity;
 

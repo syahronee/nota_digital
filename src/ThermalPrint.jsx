@@ -55,9 +55,9 @@ const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref)
 }
 `}
       </style>
-      <div className="text-center bold">BENGKEL BIRRU MOTOR</div>
-      <div className="text-center small">Sumberjati Wetan - Wedoro - Pandaan</div>
-      <div className="text-center small">No. WA: 083117583901</div>
+      <div className="text-center bold uppercase">{shopSettings?.shop_name || 'NAMA TOKO'}</div>
+      <div className="text-center small">{shopSettings?.shop_address || 'Alamat Belum Diatur'}</div>
+      {shopSettings?.shop_bio && <div className="text-center small italic">{shopSettings.shop_bio}</div>}
 
       <div className="divider" />
 
@@ -122,13 +122,7 @@ const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref)
       {/* QRIS */}
       <div className="text-center">
         {qrisString ? (
-          <img
-            src="https://drive.google.com/file/d/1dtWznsVYkMd9k62AfVGS3EaOf8wrW8id/view?usp=sharing"
-            alt="QRIS BRI"
-            className="mx-auto"
-            style={{ width: '120px', height: '120px' }}
-          />,
-          <div className="small">A/N: NURUL ANWAR</div>
+          <img src={qrisString} alt="QRIS" style={{ width: '100%', maxWidth: '200px' }} />
         ) : (
           <div className="small">QR tidak tersedia</div>
         )}
@@ -137,9 +131,8 @@ const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref)
 
       <div className="divider" />
 
-      <div className="text-center small">
-        Terima kasih 🙏
-      </div>
+      <div className="text-center small">{shopSettings?.shop_info || ''}</div>
+
     </div>
   );
 });

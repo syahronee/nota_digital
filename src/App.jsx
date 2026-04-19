@@ -79,6 +79,9 @@ const getBluetooth = () => {
   return window.bluetoothSerial;
 };
 
+const res = await axios.post('/api/create-qris', { amount: totals.grandTotal });
+const qrisCode = res.data.qr_string; // Ini adalah kode panjang 000201...
+
 // ==========================================
 // 4. MAIN COMPONENT (FUNGSI UTAMA APP)
 // ==========================================
@@ -483,12 +486,19 @@ export default function App() {
   const divider = () => '-'.repeat(LINE_WIDTH);
   const formatRp = (num) => new Intl.NumberFormat('id-ID').format(num || 0);
 
-  const generateStrukText = (nota, totals) => {
+  // Perintah standar ESC/POS untuk cetak QR Code
+  const qrCommand = (data) => {
+    // Logika ini biasanya tergantung library printer yang kamu pakai
+    // Tapi intinya kita butuh data dari qrisString Xendit
+    return data;
+  };
+
+  const generateStrukText = (nota, totals, qrisCode) => {
     let s = '';
     s += alignCenter;
-    s += boldOn + 'BIRRU MOTOR\n' + boldOff;
-    s += 'Sumberjati Wetan\n';
-    s += 'WA: 083117583901\n';
+    s += boldOn + shopSettings.shop_name + '\n' + boldOff;
+    s += shopSettings.shop_address + '\n';
+    s += shopSettings.shop_bio + '\n';
     s += divider() + '\n';
     s += alignLeft;
     s += `Nama : ${nota.customer_name || '-'}\n`;
@@ -516,11 +526,21 @@ export default function App() {
     s += leftRight(label, formatRp(Math.abs(totals.diff))) + '\n';
     s += divider() + '\n';
     s += alignCenter;
-    s += 'Terima kasih 🙏\n';
-    s += 'Barang yang sudah dibeli\n';
-    s += 'tidak dapat dikembalikan\n\n';
+    s += shopSettings.shop_info + '\n\n';
     s += alignCenter;
-    s += '--- QRIS PAYMENT ---\n';
+
+    if (qrisString) {
+      s += '--- SCAN QRIS UNTUK BAYAR ---\n\n';
+
+      // PERINTAH CETAK QR (Tergantung library Bluetooth/Printer kamu)
+      // Contoh jika library mendukung perintah .qr():
+      s += encodeQR(qrisString); // <--- Masukkan string dari Xendit di sini
+
+      s += '\n' + shopSettings.shop_info + '\n';
+    } else {
+      s += '\n' + shopSettings.shop_info + '\n';
+    }
+
     s += '\n\n\n';
     s += cut;
     return s;
@@ -791,7 +811,7 @@ export default function App() {
       const uangMuka = nota.amountPaid || 0;
       const sisa = total - uangMuka;
 
-      let text = `*NOTA BIRRU MOTOR (BM)*\n`;
+      let text = shopSettings.shop_name + '\n';
       text += `Tanggal: ${nota.date}\n`;
       text += `Pelanggan: ${nota.customer_name || '-'}\n\n`;
       text += `Detail:\n`;
@@ -805,7 +825,7 @@ export default function App() {
       text += `*Total: ${formatter(total)}*\n`;
       text += `Uang Muka: ${formatter(uangMuka)}\n`;
       text += `*Sisa: ${formatter(sisa)}*\n\n`;
-      text += `_Terima kasih telah servis di Birru Motor!_`;
+      text += `_Terima kasih telah servis di ${shopSettings.shop_name}_`;
 
       return encodeURIComponent(text);
     };
@@ -850,7 +870,7 @@ export default function App() {
 
       if (isNative) {
         const base64Data = image.split(',')[1];
-        const fileName = `Nota-BM-${currentNota?.customer_name || 'Customer'}.png`;
+        const fileName = `VP-nota-${currentNota?.customer_name || 'Customer'}.png`;
 
         const result = await Filesystem.writeFile({
           path: fileName,
@@ -865,7 +885,7 @@ export default function App() {
       } else {
         const link = document.createElement('a');
         link.href = image;
-        link.download = `Nota-BM-${currentNota?.customer_name || 'Customer'}.png`;
+        link.download = `VP-nota-${currentNota?.customer_name || 'Customer'}.png`;
         link.click();
       }
     } catch (err) {
@@ -903,7 +923,7 @@ export default function App() {
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      const fileName = `Nota-BM-${currentNota?.customer_name || 'Customer'}.pdf`;
+      const fileName = `VP-nota-${currentNota?.customer_name || 'Customer'}.pdf`;
 
       if (isNative) {
         const pdfBase64 = pdf.output('datauristring').split(',')[1];
@@ -1378,6 +1398,7 @@ export default function App() {
             totals={calculateTotals(currentNota)} // Pastikan panggil fungsi kalkulasi di sini
             formatAngka={formatAngka}
             qrisString={currentQris}
+            shopSettings={shopSettings}
           />
         </div>
       </div>
