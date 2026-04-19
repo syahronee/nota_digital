@@ -430,21 +430,6 @@ export default function App() {
     }
   };
 
-  const generateQRIS = async (amount) => {
-    try {
-      const res = await fetch("http://192.168.1.111/create-qris", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount })
-      });
-      const data = await res.json();
-      return data.qr_string;
-    } catch (err) {
-      console.error("QRIS error:", err);
-      return null;
-    }
-  };
-
   // --- THERMAL FORMATTING HELPERS ---
   const generateESCPosQR = (data) => {
     const storeLen = data.length + 3;
