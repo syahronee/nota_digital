@@ -20,6 +20,7 @@ import Settings from './Settings';
 import LoginView from './LoginView';
 import UpdatePasswordForm from './UpdatePasswordForm';
 import { showToast, showAlert } from './utils/alert';
+import axios from 'axios';
 
 // ==========================================
 // 2. CONFIGURATION & INSTANCE CLIENT
@@ -79,9 +80,6 @@ const getBluetooth = () => {
   return window.bluetoothSerial;
 };
 
-const res = await axios.post('/api/create-qris', { amount: totals.grandTotal });
-const qrisCode = res.data.qr_string; // Ini adalah kode panjang 000201...
-
 // ==========================================
 // 4. MAIN COMPONENT (FUNGSI UTAMA APP)
 // ==========================================
@@ -116,6 +114,7 @@ export default function App() {
     shop_bio: ''
   });
   const [currentPage, setCurrentPage] = useState('login'); // Default ke login
+  const [qrisImage, setQrisImage] = useState("");
 
 
   // --- LIFECYCLE (USE EFFECT) ---
@@ -493,6 +492,19 @@ export default function App() {
     return data;
   };
 
+  const generateQRIS = async (amount) => {
+    try {
+      const res = await axios.post('/api/create-qris', { amount });
+      // Kita butuh dua data: 
+      // 1. qr_string (untuk printer bluetooth)
+      // 2. qr_url atau qr_string yang di-convert jadi gambar (untuk layar/PDF)
+      return res.data;
+    } catch (err) {
+      console.error("Gagal generate QRIS", err);
+      return null;
+    }
+  };
+
   const generateStrukText = (nota, totals, qrisCode) => {
     let s = '';
     s += alignCenter;
@@ -529,12 +541,12 @@ export default function App() {
     s += shopSettings.shop_info + '\n\n';
     s += alignCenter;
 
-    if (qrisString) {
+    if (qrisCode) {
       s += '--- SCAN QRIS UNTUK BAYAR ---\n\n';
 
       // PERINTAH CETAK QR (Tergantung library Bluetooth/Printer kamu)
       // Contoh jika library mendukung perintah .qr():
-      s += encodeQR(qrisString); // <--- Masukkan string dari Xendit di sini
+      s += encodeQR(qrisCode); // <--- Masukkan string dari Xendit di sini
 
       s += '\n' + shopSettings.shop_info + '\n';
     } else {
@@ -565,10 +577,13 @@ export default function App() {
 
     // Pastikan calculateTotals ada di sisa kodemu di bawah
     const totals = calculateTotals(currentNota);
-    const qrString = await generateQRIS(totals.grandTotal);
+
+    // 1. Ambil QRIS dari Xendit dulu
+    const qrisData = await generateQRIS(totals.grandTotal);
+    const qrisString = qrisData?.qr_string; // String panjang untuk printer
     setCurrentQris(qrString);
 
-    let text = generateStrukText(currentNota, totals);
+    let text = generateStrukText(currentNota, totals, qrisString);
     if (qrString) {
       text += generateESCPosQR(qrString);
     }
@@ -582,6 +597,13 @@ export default function App() {
   };
 
   // --- HANDLERS ---
+  const handleBayar = async () => {
+    const qrisData = await generateQRIS(totals.grandTotal);
+    // Gunakan API pembuat QR gratis untuk mengubah string jadi gambar
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${qrisData.qr_string}`;
+    setQrisImage(qrImageUrl);
+  };
+
   const handleCreateNewNota = () => {
     const newNota = {
       id: generateId(),
@@ -1379,27 +1401,19 @@ export default function App() {
 
 
       {/* --- PRINT & CAPTURE AREA (OFF-SCREEN) --- */}
-
-      <div style={{
-        position: 'absolute',
-        left: '-9999px',
-        top: 0,
-        zIndex: -1
-      }}>
-        {/* Pembungkus untuk html2canvas (Download) */}
-        <div ref={notaRef} style={{
-          width: '380px', // Sesuaikan lebar standar nota
-          background: 'white',
-          padding: '20px'
-        }}>
-          <ThermalPrint
-            ref={thermalRef} // Ref untuk Bluetooth Print
-            nota={currentNota}
-            totals={calculateTotals(currentNota)} // Pastikan panggil fungsi kalkulasi di sini
-            formatAngka={formatAngka}
-            qrisString={currentQris}
-            shopSettings={shopSettings}
-          />
+      <div style={{ position: 'absolute', left: '-9999px', top: 0, zIndex: -1 }}>
+        <div ref={notaRef} style={{ width: '380px', background: 'white', padding: '20px' }}>
+          {currentNota && ( // Tambahkan pengecekan agar tidak error saat currentNota null
+            <ThermalPrint
+              ref={thermalRef}
+              nota={currentNota}
+              // Lebih baik hitung totals sekali saja di atas atau gunakan useMemo
+              totals={calculateTotals(currentNota)}
+              formatAngka={formatAngka}
+              qrisString={currentQris} // Pastikan ini URL Gambar (https://...)
+              shopSettings={shopSettings}
+            />
+          )}
         </div>
       </div>
     </>

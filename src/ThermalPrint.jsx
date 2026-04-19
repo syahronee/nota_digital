@@ -1,7 +1,6 @@
 import React, { forwardRef } from "react";
 
-const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref) => {
-  if (!nota) return null;
+const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString, shopSettings }, ref) => {  if (!nota) return null;
   const totalItems = nota.items.reduce((acc, item) => acc + item.qty, 0);
 
   return (
@@ -57,7 +56,7 @@ const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref)
       </style>
       <div className="text-center bold uppercase">{shopSettings?.shop_name || 'NAMA TOKO'}</div>
       <div className="text-center small">{shopSettings?.shop_address || 'Alamat Belum Diatur'}</div>
-      {shopSettings?.shop_bio && <div className="text-center small italic">{shopSettings.shop_bio}</div>}
+      {shopSettings?.shop_bio && <div className="text-center small">{shopSettings.shop_bio}</div>}
 
       <div className="divider" />
 
@@ -126,12 +125,11 @@ const ThermalPrint = forwardRef(({ nota, totals, formatAngka, qrisString }, ref)
         ) : (
           <div className="small">QR tidak tersedia</div>
         )}
-        <div className="small">Scan QR untuk bayar</div>
       </div>
 
       <div className="divider" />
 
-      <div className="text-center small">{shopSettings?.shop_info || ''}</div>
+      <div className="text-center small mt-4">{shopSettings?.shop_info || ''}</div>
 
     </div>
   );
