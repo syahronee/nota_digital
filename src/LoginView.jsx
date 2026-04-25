@@ -44,7 +44,7 @@ const LoginView = () => {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'http://localhost:5173/update-password',
+        redirectTo: 'https://vona-digital.vercel.app/update-password',
       });
 
       if (error) {

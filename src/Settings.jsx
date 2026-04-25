@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Save, Loader2, Store, MapPin, Info, LogOut } from 'lucide-react';
+import { ChevronLeft, Save, Loader2, Store, MapPin, Info, LogOut, Edit } from 'lucide-react';
 import { supabase } from './supabase';
 import { showToast, showAlert, showConfirm } from './utils/alert';
 
@@ -88,11 +88,11 @@ const Settings = ({ session, settings, onSave, onBack }) => {
                     {/* Info Tambahan */}
                     <div className="space-y-2">
                         <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase ml-1">
-                            <Info size={14} /> Bio Nota
+                            <Edit size={14} /> Bio Nota
                         </label>
                         <input
                             className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-blue-500/20 text-sm transition-all"
-                            placeholder="WA: 08123456789 | Rek: BCA 1234567890 a.n. Toko ABC"
+                            placeholder="WA: 0812... | Rek: BCA 123... a.n. Toko ABC"
                             value={localSettings.shop_bio}
                             onChange={e => setLocalSettings({ ...localSettings, shop_bio: e.target.value })}
                         />

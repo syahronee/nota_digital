@@ -531,7 +531,7 @@ export default function App() {
 
       // PERINTAH CETAK QR (Tergantung library Bluetooth/Printer kamu)
       // Contoh jika library mendukung perintah .qr():
-      s += encodeQR(qrisCode); // <--- Masukkan string dari Xendit di sini
+      s += generateESCPosQR(qrisCode);
 
       s += '\n' + shopSettings.shop_info + '\n';
     } else {
@@ -566,11 +566,11 @@ export default function App() {
     // 1. Ambil QRIS dari Xendit dulu
     const qrisData = await generateQRIS(totals.grandTotal);
     const qrisString = qrisData?.qr_string; // String panjang untuk printer
-    setCurrentQris(qrString);
+    setCurrentQris(qrisString);
 
     let text = generateStrukText(currentNota, totals, qrisString);
-    if (qrString) {
-      text += generateESCPosQR(qrString);
+    if (qrisString) {
+      text += generateESCPosQR(qrisString);
     }
     text += '\n\n\n';
 
@@ -592,7 +592,6 @@ export default function App() {
   const handleCreateNewNota = () => {
     const newNota = {
       id: generateId(),
-      isLocal: true,
       customer_name: '',
       customer_phone: '',
       date: new Date().toLocaleDateString('id-ID', {
@@ -601,8 +600,10 @@ export default function App() {
         day: 'numeric'
       }),
       items: [{ id: Date.now(), name: '', qty: 1, price: 0 }],
-      serviceFee: 0,
-      amountPaid: 0
+      service_fee: 0,
+      amount_paid: 0,
+      total: 0,
+      user_id: session.user.id
     };
 
     setCurrentNota(newNota);
@@ -699,17 +700,22 @@ export default function App() {
     const { grandTotal, isLunas } = calculateTotals(currentNota);
 
     let payload = {
-      ...currentNota,
       customer_name: currentNota?.customer_name || 'Pelanggan Umum',
       customer_phone: currentNota?.customer_phone || '',
-      items: currentNota?.items,
-      service_fee: currentNota?.serviceFee || 0,
+      items: currentNota?.items || [],
+      service_fee: Number(currentNota?.service_fee || currentNota?.serviceFee || 0),
+      amount_paid: Number(currentNota?.amount_paid || currentNota?.amountPaid || 0),
       total: grandTotal,
-      amount_paid: currentNota?.amountPaid || 0,
       status: isLunas ? 'lunas' : 'hutang',
-      date: currentNota?.date,
+      date: currentNota?.date || new Date().toLocaleDateString('id-ID'),
+      user_id: session.user.id,
       updated_at: new Date().toISOString()
     };
+
+    // Jika sedang update nota lama, tambahkan ID-nya
+    if (currentNota.id && !currentNota.isLocal) {
+      payload.id = currentNota.id;
+    }
 
     try {
       if (isOnline && client) {
@@ -721,18 +727,16 @@ export default function App() {
             .update(payload)
             .eq('id', currentNota.id)
             .select()
-            .single();
         } else {
           result = await client
             .from('notas')
             .insert([payload])
             .select()
-            .single();
         }
 
         if (result.error) throw result.error;
-
-        payload = { ...result.data, isLocal: false };
+        const savedData = result.data[0];
+        payload = { ...savedData, isLocal: false };
 
       } else {
         payload.id = currentNota.id || generateId();
@@ -1004,9 +1008,10 @@ export default function App() {
       customer_phone: '',
       items: newItems,
       subtotal: subtotal, // Simpan total kotor
-      serviceFee: 0,
-      amountPaid: 0,
-      isLocal: true
+      service_fee: 0,
+      amount_paid: 0,
+      isLocal: true,
+      user_id: session.user.id
     });
 
     // 3. Reset dan Pindah Halaman
@@ -1097,7 +1102,7 @@ export default function App() {
               </button>
 
               {/* Point 7: Perbaikan Logic Warna Badge */}
-              <div className={`flex items-center gap-1 text-[8px] font-bold px-1 py-0.5 rounded-full border shadow-sm ${isOnlineState
+              <div translate='no' className={`flex items-center gap-1 text-[8px] font-bold px-1 py-0.5 rounded-full border shadow-sm ${isOnlineState
                 ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
                 : 'bg-orange-500/10 border-orange-500/50 text-orange-400'
                 }`}>
@@ -1150,7 +1155,7 @@ export default function App() {
         {/* BOTTOM NAV */}
         <div className="fixed bottom-8 left-0 right-0 flex justify-center px-6 gap-3 max-w-md mx-auto">
           <button onClick={handleCreateNewNota} className="flex-[2] bg-slate-900 text-white flex items-center justify-center gap-3 py-4 rounded-2xl shadow-2xl font-bold text-[10px] tracking-widest">
-            <PlusCircle size={18} className="text-orange-400" /> BUAT NOTA
+            <PlusCircle size={18} translate='no' className="text-orange-400" /> BUAT NOTA
           </button>
           <button onClick={() => setView('inventory')} className="flex-1 bg-white text-slate-900 border border-slate-200 flex flex-col items-center justify-center py-4 rounded-2xl shadow-xl font-bold text-[9px]">
             <Package size={18} className="text-blue-500" /> ETALASE
@@ -1217,9 +1222,9 @@ export default function App() {
 
             {/* Header Toko (Point 5: Full kesamping) */}
             <div className="bg-slate-900 text-white p-4 border-b-[6px] border-orange-500 mb-6">
-              <h1 className="text-3xl font-bold italic uppercase tracking-tighter">{shopSettings.shop_name}</h1>
-              <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">{shopSettings.shop_address}</p>
-              <p className="text-[10px] text-orange-500">{shopSettings.shop_bio}</p>
+              <h1 translate='no' className="text-3xl font-bold italic uppercase tracking-tighter">{shopSettings.shop_name}</h1>
+              <p translate='no' className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">{shopSettings.shop_address}</p>
+              <p translate='no' className="text-[10px] text-orange-500">{shopSettings.shop_bio}</p>
             </div>
 
             <div className="px-5">
@@ -1229,9 +1234,13 @@ export default function App() {
                   <div>
                     <p className="text-[9px] font-bold text-slate-400 uppercase">Nama Pelanggan</p>
                     <input
-                      value={currentNota.customer_name}
-                      onChange={(e) => setCurrentNota({ ...currentNota, customer_name: e.target.value })}
+                      value={currentNota.customer_name || ''}
+                      onChange={(e) => setCurrentNota({
+                        ...currentNota,
+                        customer_name: e.target.value
+                      })}
                       className="bg-transparent font-bold text-sm w-full outline-none" placeholder="Input nama..."
+                      translate='no'
                     />
                   </div>
                   <div className="text-right">
@@ -1297,13 +1306,17 @@ export default function App() {
                           className="w-10 py-1 text-center bg-slate-50 rounded-lg outline-none font-bold border"
                         />
                       </td>
-                      <td className="text-right font-bold text-slate-900">{formatRupiah(item.qty * item.price)}</td>
-                      <button
-                        onClick={() => removeItem(idx)}
-                        className="text-slate-300 hover:text-red-500 hover:bg-red-100 rounded-md transition-all mt-5 ms-3 p-2"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <td className="text-right font-bold text-slate-900">
+                        {formatRupiah(item.qty * item.price)}
+                      </td>
+                      <td className="text-right">
+                        <button
+                          onClick={() => removeItem(idx)}
+                          className="text-slate-300 hover:text-red-500 hover:bg-red-100 rounded-md transition-all p-2"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1323,7 +1336,7 @@ export default function App() {
                   <span>{formatRupiah(subTotal)}</span>
                 </div>
                 <div className="flex justify-between text-[10px] font-bold items-center text-slate-400 uppercase tracking-widest">
-                  <span>Biaya Jasa</span>
+                  <span>Ongkos Jasa</span>
                   <input
                     value={formatInput(currentNota.serviceFee)}
                     onChange={(e) => setCurrentNota({ ...currentNota, serviceFee: parseInput(e.target.value) })}
@@ -1331,7 +1344,7 @@ export default function App() {
                   />
                 </div>
                 <div className="pt-4 border-t border-white/10 flex justify-between items-center">
-                  <span className="text-xs font-black italic text-orange-400">TOTAL AKHIR</span>
+                  <span className="text-xs font-black italic text-orange-400">PERLU DIBAYAR</span>
                   <span className="text-2xl font-black">{formatRupiah(grandTotal)}</span>
                 </div>
 

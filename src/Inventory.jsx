@@ -110,7 +110,13 @@ const Inventory = ({ onBack, onAddToCart, onRemoveFromCart, cartCount, onCheckou
                 const { data: { publicUrl } } = supabase.storage.from('product-image').getPublicUrl(filePath);
                 finalImageUrl = publicUrl;
             }
-            const { error } = await supabase.from('products').insert([{ ...formData, price: parseInt(formData.price), stock: parseInt(formData.stock) || 0, image_url: finalImageUrl, user_id: session.user.id }]);
+            const { error } = await supabase.from('products').insert([{
+                ...formData, 
+                price: parseInt(formData.price), 
+                stock: parseInt(formData.stock) || 0, 
+                image_url: finalImageUrl, 
+                user_id: session.user.id
+            }]);
             if (error) throw error;
 
             setIsModalOpen(false);
